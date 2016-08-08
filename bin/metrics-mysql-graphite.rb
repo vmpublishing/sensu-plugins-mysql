@@ -112,7 +112,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
       port:       config[    :port],
       socket:     config[  :socket],
     }
-    @client = Mysql2::Client.new(connection_info)
+    @client = Mysql2::Client.new(@connection_info)
   end
 
 

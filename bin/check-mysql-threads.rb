@@ -27,7 +27,7 @@
 #
 
 require 'sensu-plugin/check/cli'
-require 'mysql'
+require 'mysql2'
 require 'inifile'
 
 class CheckMySQLHealth < Sensu::Plugin::Check::CLI
@@ -96,7 +96,7 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
       port:       config[    :port],
       socket:     config[  :socket],
     }
-    @client = Mysql2::Client.new(connection_info)
+    @client = Mysql2::Client.new(@connection_info)
   end
 
 
