@@ -74,7 +74,7 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
 
     @connection_info = {
       host:       config[:hostname],
-      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      username:  (config[     :ini] ? section[    'user'] : config[:user]),
       password:  (config[     :ini] ? section['password'] : config[:password]),
       database:   config[:database],
       port:       config[    :port],
@@ -84,7 +84,7 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
   end
 
 
-  def run
+  def run_test
     warn = config[:warn].to_i
     crit = config[:crit].to_i
 

@@ -97,7 +97,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
          boolean: true
 
 
-  def connect config
+  def connect
     section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
@@ -106,7 +106,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
 
     @connection_info = {
       host:       config[:hostname],
-      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      username:  (config[     :ini] ? section[    'user'] : config[:user]),
       password:  (config[     :ini] ? section['password'] : config[:password]),
       database:   config[:database],
       port:       config[    :port],
@@ -246,7 +246,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
       # should return a single element array containing one hash
       # #YELLOW
       slave_results.first.each do |key, value|
-        if metrics['general'].include?(key)
+        if self.class.mysql_metrics['general'].include?(key)
           # Replication lag being null is bad, very bad, so negativate it here
           value = -1 if key == 'Seconds_Behind_Master' && value.nil?
           output "#{config[:scheme]}.#{scheme_append}.general.#{metrics['general'][key]}", value
@@ -257,7 +257,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
     variables_results = @client.query('SHOW GLOBAL VARIABLES')
     category = 'configuration'
     variables_results.each do |row|
-      metrics[category].each do |metric, desc|
+      self.class.mysql_metrics[category].each do |metric, desc|
         if metric.casecmp(row['Variable_name']) == 0
           output "#{config[:scheme]}.#{scheme_append}.#{category}.#{desc}", row['Value']
         end
@@ -269,7 +269,7 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
 
 
   def run
-    connect config
+    connect
     run_test
   rescue Mysql2::Error => e
     errstr = "Error code: #{e.errno} Error message: #{e.error}"

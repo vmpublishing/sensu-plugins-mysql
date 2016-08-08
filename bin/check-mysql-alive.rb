@@ -71,7 +71,7 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
          long: '--socket SOCKET'
 
 
-  def connect config
+  def connect
     section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
@@ -80,7 +80,7 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
 
     @connection_info = {
       host:       config[:hostname],
-      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      username:  (config[     :ini] ? section[    'user'] : config[:user]),
       password:  (config[     :ini] ? section['password'] : config[:password]),
       database:   config[:database],
       port:       config[    :port],
@@ -112,7 +112,7 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
 
 
   def run
-    connect config
+    connect
     run_test
   rescue Mysql2::Error => e
     errstr = "Error code: #{e.errno} Error message: #{e.error}"

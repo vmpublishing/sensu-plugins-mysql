@@ -72,7 +72,7 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
          default: false
 
 
-  def connect #config
+  def connect
     section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
@@ -80,18 +80,18 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
     end
 
     @connection_info = {
-      host:    config[:hostname],
-      user:   (config[     :ini] ? section[    'user'] : config[:username]),
-      pass:   (config[     :ini] ? section['password'] : config[:password]),
-      name:    config[:database],
-      port:    config[    :port],
-      socket:  config[  :socket],
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:user]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
     }
     @client = Mysql2::Client.new(@connection_info)
   end
 
-  
-  def run_test #config
+
+  def run_test
     max_con = @client
               .query("SHOW VARIABLES LIKE 'max_connections'")
               .first
