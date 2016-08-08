@@ -40,9 +40,7 @@ Gem::Specification.new do |s|
   s.test_files             = s.files.grep(%r{^(test|spec|features)/})
   s.version                = SensuPluginsMySql::Version::VER_STRING
 
-  s.add_runtime_dependency 'aws', '2.10.2'
   s.add_runtime_dependency 'inifile', '3.0.0'
-  s.add_runtime_dependency 'mysql', '2.9.1'
   s.add_runtime_dependency 'mysql2', '0.3.18'
   s.add_runtime_dependency 'sensu-plugin', '~> 1.2'
 
@@ -56,3 +54,4 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'rubocop',                   '~> 0.40.0'
   s.add_development_dependency 'yard',                      '~> 0.8'
 end
+

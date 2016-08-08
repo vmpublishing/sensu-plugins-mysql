@@ -15,33 +15,38 @@ require 'mysql2'
 require 'inifile'
 
 class CheckMySQLHealth < Sensu::Plugin::Check::CLI
+
+  option :hostname,
+         description: 'Hostname to login to',
+         short: '-h HOST',
+         long: '--hostname HOST'
+
   option :user,
          description: 'MySQL User',
          short: '-u USER',
-         long: '--user USER',
-         default: 'root'
+         long: '--user USER'
 
   option :password,
          description: 'MySQL Password',
          short: '-p PASS',
          long: '--password PASS'
 
-  option :ini,
-         description: 'My.cnf ini file',
-         short: '-i',
-         long: '--ini VALUE'
-
-  option :hostname,
-         description: 'Hostname to login to',
-         short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
-
   option :port,
          description: 'Port to connect to',
          short: '-P PORT',
          long: '--port PORT',
          default: '3306'
+
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE',
+         default: 'test'
+
+  option :ini,
+         description: 'My.cnf ini file',
+         short: '-i',
+         long: '--ini VALUE'
 
   option :socket,
          description: 'Socket to use',
@@ -66,31 +71,33 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
          long: '--percentage',
          default: false
 
-  def run
+
+  def connect #config
+    section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
-      db_user = section['user']
-      db_pass = section['password']
-    else
-      db_user = config[:user]
-      db_pass = config[:password]
     end
-    db = Mysql2::Client.new(
-      host: config[:hostname],
-      username: db_user,
-      password: db_pass,
-      database: config[:database],
-      port: config[:port].to_i,
-      socket: config[:socket]
-    )
 
-    max_con = db
+    @connection_info = {
+      host:    config[:hostname],
+      user:   (config[     :ini] ? section[    'user'] : config[:username]),
+      pass:   (config[     :ini] ? section['password'] : config[:password]),
+      name:    config[:database],
+      port:    config[    :port],
+      socket:  config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
+  end
+
+  
+  def run_test #config
+    max_con = @client
               .query("SHOW VARIABLES LIKE 'max_connections'")
               .first
               .fetch('Value')
               .to_i
-    used_con = db
+    used_con = @client
                .query("SHOW GLOBAL STATUS LIKE 'Threads_connected'")
                .first
                .fetch('Value')
@@ -105,9 +112,19 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
       warning "Max connections reached in MySQL: #{used_con} out of #{max_con}" if used_con >= config[:maxwarn].to_i
       ok "Max connections is under limit in MySQL: #{used_con} out of #{max_con}" # rubocop:disable Style/IdenticalConditionalBranches
     end
+  end
+
+
+  def run
+    connect
+    run_test
   rescue Mysql2::Error => e
-    critical "MySQL check failed: #{e.error}"
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
   ensure
-    db.close if db
+    @client.close if @client
   end
 end
+

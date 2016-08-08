@@ -15,33 +15,37 @@ require 'mysql'
 require 'inifile'
 
 class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
+
+  option :hostname,
+         description: 'Hostname to login to',
+         short: '-h HOST',
+         long: '--hostname HOST'
+
   option :user,
          description: 'MySQL User',
          short: '-u USER',
-         long: '--user USER',
-         default: 'root'
+         long: '--user USER'
 
   option :password,
          description: 'MySQL Password',
          short: '-p PASS',
          long: '--password PASS'
 
-  option :ini,
-         description: 'My.cnf ini file',
-         short: '-i',
-         long: '--ini VALUE'
-
-  option :hostname,
-         description: 'Hostname to login to',
-         short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
-
   option :port,
          description: 'Port to connect to',
          short: '-P PORT',
          long: '--port PORT',
          default: '3306'
+
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE'
+
+  option :ini,
+         description: 'My.cnf ini file',
+         short: '-i',
+         long: '--ini VALUE'
 
   option :socket,
          description: 'Socket to use',
@@ -60,22 +64,31 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
          long: '--critical SECONDS',
          default: 10
 
-  def run
+
+  def connect
+    section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
-      db_user = section['user']
-      db_pass = section['password']
-    else
-      db_user = config[:user]
-      db_pass = config[:password]
     end
-    db = Mysql.new(config[:hostname], db_user, db_pass, config[:database], config[:port].to_i, config[:socket])
 
+    @connection_info = {
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
+  end
+
+
+  def run
     warn = config[:warn].to_i
     crit = config[:crit].to_i
 
-    res = db.query <<-EQSQL
+    result = @client.query <<-EQSQL
       select
         t_b.trx_mysql_thread_id blocking_id,
         t_w.trx_mysql_thread_id requesting_id,
@@ -112,7 +125,7 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
 
     lock_info = []
     is_crit = false
-    res.each_hash do |row|
+    result.each_hash do |row|
       h = {}
       is_crit = true if row['seconds'].to_i > crit
       h['blocking_id'] = row['blocking_id']
@@ -136,9 +149,20 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
       critical "Detected Locks #{lock_info}"
     end
 
-  rescue Mysql::Error => e
-    critical "MySQL check failed: #{e.error}"
-  ensure
-    db.close if db
   end
+
+
+  def run
+    connect
+    run_test
+  rescue Mysql2::Error => e
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+  ensure
+    @client.close if @client
+  end
+
 end
+

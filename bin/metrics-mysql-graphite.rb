@@ -36,53 +36,87 @@ require 'socket'
 require 'inifile'
 
 class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
-  option :host,
+
+  option :hostname,
+         description: 'Hostname to login to',
          short: '-h HOST',
-         long: '--host HOST',
-         description: 'Mysql Host to connect to',
-         required: true
+         long: '--hostname HOST'
 
-  option :port,
-         short: '-P PORT',
-         long: '--port PORT',
-         description: 'Mysql Port to connect to',
-         proc: proc(&:to_i),
-         default: 3306
-
-  option :username,
-         short: '-u USERNAME',
-         long: '--user USERNAME',
-         description: 'Mysql Username'
+  option :user,
+         description: 'MySQL User',
+         short: '-u USER',
+         long: '--user USER'
 
   option :password,
-         short: '-p PASSWORD',
-         long: '--pass PASSWORD',
-         description: 'Mysql password',
-         default: ''
+         description: 'MySQL Password',
+         short: '-p PASS',
+         long: '--password PASS'
+
+  option :port,
+         description: 'Port to connect to',
+         short: '-P PORT',
+         long: '--port PORT',
+         default: '3306'
+
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE'
 
   option :ini,
+         description: 'My.cnf ini file',
          short: '-i',
-         long: '--ini VALUE',
-         description: 'My.cnf ini file'
+         long: '--ini VALUE'
+
+  option :socket,
+         description: 'Socket to use',
+         short: '-s SOCKET',
+         long: '--socket SOCKET'
 
   option :scheme,
          description: 'Metric naming scheme, text to prepend to metric',
-         short: '-s SCHEME',
+         short: '-S SCHEME',
          long: '--scheme SCHEME',
          default: "#{Socket.gethostname}.mysql"
 
-  option :socket,
-         short: '-S SOCKET',
-         long: '--socket SOCKET'
+  option :scheme_append,
+         description: 'Metric naming scheme addendum. placed right after the prepend (usually the server name) to distinguish for instance different targets. Defaults to hostname',
+         short: '-A APPEND_STRING',
+         long:  '--scheme-append'
+
+  option :no_slave,
+         description: 'skip slave metrics. might be necessary to skip those metrics due to permissions',
+         short: '-n',
+         long:  '--no-slave',
+         boolean: true,
+         default: false
 
   option :verbose,
          short: '-v',
          long: '--verbose',
          boolean: true
 
-  def run
-    # props to https://github.com/coredump/hoardd/blob/master/scripts-available/mysql.coffee
 
+  def connect config
+    section = nil
+    if config[:ini]
+      ini = IniFile.load(config[:ini])
+      section = ini['client']
+    end
+
+    @connection_info = {
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
+  end
+
+
+  def self.mysql_metrics
     metrics = {
       'general' => {
         'Bytes_received' =>         'rxBytes',
@@ -192,71 +226,59 @@ class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
         'Max_prepared_stmt_count' =>          'MaxPreparedStmtCount'
       }
     }
+  end
 
-    config[:host].split(' ').each do |mysql_host|
-      mysql_shorthostname = mysql_host.split('.')[0]
-      if config[:ini]
-        ini = IniFile.load(config[:ini])
-        section = ini['client']
-        db_user = section['user']
-        db_pass = section['password']
-      else
-        db_user = config[:username]
-        db_pass = config[:password]
-      end
-      begin
-        mysql = Mysql2::Client.new(
-          host: mysql_host,
-          port: config[:port],
-          username: db_user,
-          password: db_pass,
-          socket: config[:socket]
-        )
 
-        results = mysql.query('SHOW GLOBAL STATUS')
-      rescue => e
-        puts e.message
-      end
-
-      results.each do |row|
-        metrics.each do |category, var_mapping|
-          if var_mapping.key?(row['Variable_name'])
-            output "#{config[:scheme]}.#{mysql_shorthostname}.#{category}.#{var_mapping[row['Variable_name']]}", row['Value']
-          end
+  # props to https://github.com/coredump/hoardd/blob/master/scripts-available/mysql.coffee
+  def run_test
+    scheme_append = config[:scheme_append] ? config[:scheme_append] : config[:host]
+    results = @client.query('SHOW GLOBAL STATUS')
+    results.each do |row|
+      self.class.mysql_metrics.each do |category, var_mapping|
+        if var_mapping.key?(row['Variable_name'])
+          output "#{config[:scheme]}.#{scheme_append}.#{category}.#{var_mapping[row['Variable_name']]}", row['Value']
         end
       end
+    end
 
-      begin
-        slave_results = mysql.query('SHOW SLAVE STATUS')
-        # should return a single element array containing one hash
-        # #YELLOW
-        slave_results.first.each do |key, value|
-          if metrics['general'].include?(key)
-            # Replication lag being null is bad, very bad, so negativate it here
-            value = -1 if key == 'Seconds_Behind_Master' && value.nil?
-            output "#{config[:scheme]}.#{mysql_shorthostname}.general.#{metrics['general'][key]}", value
-          end
+    unless config[:no_slave]
+      slave_results = @client.query('SHOW SLAVE STATUS')
+      # should return a single element array containing one hash
+      # #YELLOW
+      slave_results.first.each do |key, value|
+        if metrics['general'].include?(key)
+          # Replication lag being null is bad, very bad, so negativate it here
+          value = -1 if key == 'Seconds_Behind_Master' && value.nil?
+          output "#{config[:scheme]}.#{scheme_append}.general.#{metrics['general'][key]}", value
         end
-      rescue => e
-        puts "Error querying slave status: #{e}" if config[:verbose]
       end
+    end
 
-      begin
-        variables_results = mysql.query('SHOW GLOBAL VARIABLES')
-
-        category = 'configuration'
-        variables_results.each do |row|
-          metrics[category].each do |metric, desc|
-            if metric.casecmp(row['Variable_name']) == 0
-              output "#{config[:scheme]}.#{mysql_shorthostname}.#{category}.#{desc}", row['Value']
-            end
-          end
+    variables_results = @client.query('SHOW GLOBAL VARIABLES')
+    category = 'configuration'
+    variables_results.each do |row|
+      metrics[category].each do |metric, desc|
+        if metric.casecmp(row['Variable_name']) == 0
+          output "#{config[:scheme]}.#{scheme_append}.#{category}.#{desc}", row['Value']
         end
-      rescue => e
-        puts e.message
       end
     end
 
     ok
   end
+
+
+  def run
+    connect config
+    run_test
+  rescue Mysql2::Error => e
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+  ensure
+    @client.close if @client
+  end
+
 end
+

@@ -28,38 +28,42 @@ require 'mysql2'
 require 'inifile'
 
 class CheckMysqlReplicationStatus < Sensu::Plugin::Check::CLI
-  option :host,
-         short: '-h',
-         long: '--host=VALUE',
-         description: 'Database host'
 
-  option :port,
-         short: '-P',
-         long: '--port=VALUE',
-         description: 'Database port',
-         default: 3306,
-         # #YELLOW
-         proc: lambda { |s| s.to_i } # rubocop:disable Lambda
-
-  option :socket,
-         short: '-s SOCKET',
-         long: '--socket SOCKET',
-         description: 'Socket to use'
+  option :hostname,
+         description: 'Hostname to login to',
+         short: '-h HOST',
+         long: '--hostname HOST'
 
   option :user,
-         short: '-u',
-         long: '--username=VALUE',
-         description: 'Database username'
+         description: 'MySQL User',
+         short: '-u USER',
+         long: '--user USER'
 
-  option :pass,
-         short: '-p',
-         long: '--password=VALUE',
-         description: 'Database password'
+  option :password,
+         description: 'MySQL Password',
+         short: '-p PASS',
+         long: '--password PASS'
+
+  option :port,
+         description: 'Port to connect to',
+         short: '-P PORT',
+         long: '--port PORT',
+         default: '3306'
+
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE'
 
   option :ini,
+         description: 'My.cnf ini file',
          short: '-i',
-         long: '--ini VALUE',
-         description: 'My.cnf ini file'
+         long: '--ini VALUE'
+
+  option :socket,
+         description: 'Socket to use',
+         short: '-s SOCKET',
+         long: '--socket SOCKET'
 
   option :warn,
          short: '-w',
@@ -86,70 +90,76 @@ class CheckMysqlReplicationStatus < Sensu::Plugin::Check::CLI
          show_options: true,
          exit: 0
 
-  def run
+
+  def connect config
+    section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
-      db_user = section['user']
-      db_pass = section['password']
-    else
-      db_user = config[:user]
-      db_pass = config[:pass]
-    end
-    db_host = config[:host]
-
-    if [db_host, db_user, db_pass].any?(&:nil?)
-      unknown 'Must specify host, user, password'
     end
 
-    begin
-      db = Mysql2::Client.new(host: db_host, username: db_user, password: db_pass, port: config[:port].to_i, socket: config[:socket])
-      results = db.query 'show slave status'
+    @connection_info = {
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
+  end
 
-      unless results.nil?
-        results.each do |row|
-          warn "couldn't detect replication status" unless
-            %w(Slave_IO_State Slave_IO_Running Slave_SQL_Running Last_IO_Error Last_SQL_Error Seconds_Behind_Master).all? do |key|
-              row.key? key
-            end
+  def run_test
+    results = @client.query 'show slave status'
 
-          slave_running = %w(Slave_IO_Running Slave_SQL_Running).all? do |key|
-            row[key] =~ /Yes/
+    unless results.nil?
+      results.each do |row|
+        warn "couldn't detect replication status" unless
+          %w(Slave_IO_State Slave_IO_Running Slave_SQL_Running Last_IO_Error Last_SQL_Error Seconds_Behind_Master).all? do |key|
+            row.key? key
           end
 
-          output = 'Slave not running!'
-          output += ' STATES:'
-          output += " Slave_IO_Running=#{row['Slave_IO_Running']}"
-          output += ", Slave_SQL_Running=#{row['Slave_SQL_Running']}"
-          output += ", LAST ERROR: #{row['Last_SQL_Error']}"
-
-          critical output unless slave_running
-
-          replication_delay = row['Seconds_Behind_Master'].to_i
-
-          message = "replication delayed by #{replication_delay}"
-
-          if replication_delay > config[:warn] &&
-             replication_delay <= config[:crit]
-            warning message
-          elsif replication_delay >= config[:crit]
-            critical message
-          else
-            ok "slave running: #{slave_running}, #{message}"
-          end
+        slave_running = %w(Slave_IO_Running Slave_SQL_Running).all? do |key|
+          row[key] =~ /Yes/
         end
-        ok 'show slave status was nil. This server is not a slave.'
+
+        output = 'Slave not running!'
+        output += ' STATES:'
+        output += " Slave_IO_Running=#{row['Slave_IO_Running']}"
+        output += ", Slave_SQL_Running=#{row['Slave_SQL_Running']}"
+        output += ", LAST ERROR: #{row['Last_SQL_Error']}"
+
+        critical output unless slave_running
+
+        replication_delay = row['Seconds_Behind_Master'].to_i
+
+        message = "replication delayed by #{replication_delay}"
+
+        if replication_delay > config[:warn] &&
+           replication_delay <= config[:crit]
+          warning message
+        elsif replication_delay >= config[:crit]
+          critical message
+        else
+          ok "slave running: #{slave_running}, #{message}"
+        end
       end
-
-    rescue Mysql2::Error => e
-      errstr = "Error code: #{e.errno} Error message: #{e.error}"
-      critical "#{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
-
-    rescue => e
-      critical e
-
-    ensure
-      db.close if db
+      ok 'show slave status was nil. This server is not a slave.'
     end
   end
+
+
+  def run
+    connect config
+    run_test
+  rescue Mysql2::Error => e
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+  ensure
+    @client.close if @client
+  end
+
 end
+

@@ -31,33 +31,37 @@ require 'mysql'
 require 'inifile'
 
 class CheckMySQLHealth < Sensu::Plugin::Check::CLI
+
+  option :hostname,
+         description: 'Hostname to login to',
+         short: '-h HOST',
+         long: '--hostname HOST'
+
   option :user,
          description: 'MySQL User',
          short: '-u USER',
-         long: '--user USER',
-         default: 'root'
+         long: '--user USER'
 
   option :password,
          description: 'MySQL Password',
          short: '-p PASS',
          long: '--password PASS'
 
-  option :ini,
-         description: 'My.cnf ini file',
-         short: '-i',
-         long: '--ini VALUE'
-
-  option :hostname,
-         description: 'Hostname to login to',
-         short: '-h HOST',
-         long: '--hostname HOST',
-         default: 'localhost'
-
   option :port,
          description: 'Port to connect to',
          short: '-P PORT',
          long: '--port PORT',
          default: '3306'
+
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE'
+
+  option :ini,
+         description: 'My.cnf ini file',
+         short: '-i',
+         long: '--ini VALUE'
 
   option :socket,
          description: 'Socket to use',
@@ -76,24 +80,50 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
          long: '--critnum NUMBER',
          default: 25
 
-  def run
+
+  def connect config
+    section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
-      db_user = section['user']
-      db_pass = section['password']
-    else
-      db_user = config[:user]
-      db_pass = config[:password]
     end
-    db = Mysql.real_connect(config[:hostname], db_user, db_pass, config[:database], config[:port].to_i, config[:socket])
-    run_thr = db.query("SHOW GLOBAL STATUS LIKE 'Threads_running'").fetch_hash.fetch('Value').to_i
-    critical "MySQL currently running threads: #{run_thr}" if run_thr >= config[:maxcrit].to_i
-    warning "MySQL currently running threads: #{run_thr}" if run_thr >= config[:maxwarn].to_i
-    ok "Currently running threads are under limit in MySQL: #{run_thr}"
-  rescue Mysql::Error => e
-    critical "MySQL check failed: #{e.error}"
-  ensure
-    db.close if db
+
+    @connection_info = {
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
   end
+
+
+  def run_test
+    threads_running = @client.query("SHOW GLOBAL STATUS LIKE 'Threads_running'").fetch_hash.fetch('Value').to_i
+
+    if config[:maxcrit].to_i <= threads_running
+      critical "MySQL currently running threads: #{run_thr}"
+    elsif config[:maxwarn].to_i <= threads_running
+      warning "MySQL currently running threads: #{run_thr}"
+    else
+      ok "Currently running threads are under limit in MySQL: #{threads_running}"
+    end
+  end
+
+
+  def run
+    connect config
+    run_test
+  rescue Mysql2::Error => e
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+  ensure
+    @client.close if @client
+  end
+
 end
+

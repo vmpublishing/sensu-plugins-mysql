@@ -27,10 +27,18 @@
 #
 
 require 'sensu-plugin/check/cli'
-require 'mysql'
+require 'mysql2'
 require 'inifile'
 
+require 'securerandom'
+
 class CheckMySQL < Sensu::Plugin::Check::CLI
+
+  option :hostname,
+         description: 'Hostname to login to',
+         short: '-h HOST',
+         long: '--hostname HOST'
+
   option :user,
          description: 'MySQL User',
          short: '-u USER',
@@ -41,52 +49,79 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
          short: '-p PASS',
          long: '--password PASS'
 
-  option :ini,
-         description: 'My.cnf ini file',
-         short: '-i',
-         long: '--ini VALUE'
-
-  option :hostname,
-         description: 'Hostname to login to',
-         short: '-h HOST',
-         long: '--hostname HOST'
-
-  option :database,
-         description: 'Database schema to connect to',
-         short: '-d DATABASE',
-         long: '--database DATABASE',
-         default: 'test'
-
   option :port,
          description: 'Port to connect to',
          short: '-P PORT',
          long: '--port PORT',
          default: '3306'
 
+  option :database,
+         description: 'Database schema to connect to',
+         short: '-d DATABASE',
+         long: '--database DATABASE'
+
+  option :ini,
+         description: 'My.cnf ini file',
+         short: '-i',
+         long: '--ini VALUE'
+
   option :socket,
          description: 'Socket to use',
          short: '-s SOCKET',
          long: '--socket SOCKET'
 
-  def run
+
+  def connect config
+    section = nil
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
-      db_user = section['user']
-      db_pass = section['password']
-    else
-      db_user = config[:user]
-      db_pass = config[:password]
     end
 
-    begin
-      db = Mysql.real_connect(config[:hostname], db_user, db_pass, config[:database], config[:port].to_i, config[:socket])
-      info = db.get_server_info
-      ok "Server version: #{info}"
-    rescue Mysql::Error => e
-      critical "Error message: #{e.error}"
-    ensure
-      db.close if db
+    @connection_info = {
+      host:       config[:hostname],
+      username:  (config[     :ini] ? section[    'user'] : config[:username]),
+      password:  (config[     :ini] ? section['password'] : config[:password]),
+      database:   config[:database],
+      port:       config[    :port],
+      socket:     config[  :socket],
+    }
+    @client = Mysql2::Client.new(connection_info)
+  end
+
+
+  def run_test
+    value_1 = SecureRandom::random_number(10)
+    value_2 = SecureRandom::random_number(10)
+    sql = "SELECT #{value_1} + #{value_2}"
+    results = @client.query(sql)
+    if results
+      if 1 == results.size
+        if (value_1 + value_2) == results.first.fetch('Value').to_i
+          ok "mysql server '#{@connection_info[:host]}' alive"
+        else
+          critical "wrong result by mysql server for query: '#{sql}', got '#{results.first.fetch('Value').to_i}' expected #{value_1 + value_2}"
+        end
+      else
+        critical "wrong number of results for query: '#{sql}', got '#{results.size}' expected 1"
+      end
+    else
+      critical "Query was not executed: #{sql}"
     end
   end
+
+
+  def run
+    connect config
+    run_test
+  rescue Mysql2::Error => e
+    errstr = "Error code: #{e.errno} Error message: #{e.error}"
+    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+  rescue => e
+    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+  ensure
+    @client.close if @client
+  end
+
 end
+
