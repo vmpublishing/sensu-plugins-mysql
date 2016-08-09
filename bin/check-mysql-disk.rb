@@ -142,7 +142,7 @@ class CheckMysqlDisk < Sensu::Plugin::Check::CLI
   rescue Mysql2::Error => e
     critical e.message
   rescue => e
-    critical "UKNOWN: #{e.message}\n\n#{e.backtrace.join('\n')}"
+    critical "UNKNOWN: #{e.message}\n\n#{e.backtrace.join('\n')}"
   ensure
     @client.close if @client
   end
