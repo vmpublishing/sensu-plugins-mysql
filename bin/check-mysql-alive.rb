@@ -32,7 +32,7 @@ require 'inifile'
 
 require 'securerandom'
 
-class CheckMySQL < Sensu::Plugin::Check::CLI
+class CheckMysqlAlive < Sensu::Plugin::Check::CLI
 
   option :hostname,
          description: 'Hostname to login to',

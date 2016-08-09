@@ -35,7 +35,7 @@ require 'mysql2'
 require 'socket'
 require 'inifile'
 
-class Mysql2Graphite < Sensu::Plugin::Metric::CLI::Graphite
+class MysqlGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
 
   option :hostname,
          description: 'Hostname to login to',

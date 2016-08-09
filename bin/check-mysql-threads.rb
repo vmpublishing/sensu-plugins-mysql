@@ -30,7 +30,7 @@ require 'sensu-plugin/check/cli'
 require 'mysql2'
 require 'inifile'
 
-class CheckMySQLHealth < Sensu::Plugin::Check::CLI
+class CheckMysqlThreads < Sensu::Plugin::Check::CLI
 
   option :hostname,
          description: 'Hostname to login to',

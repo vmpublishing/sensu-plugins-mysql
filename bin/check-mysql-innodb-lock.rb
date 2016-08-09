@@ -14,7 +14,7 @@ require 'sensu-plugin/check/cli'
 require 'mysql2'
 require 'inifile'
 
-class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
+class CheckMysqlInnodbLock < Sensu::Plugin::Check::CLI
 
   option :hostname,
          description: 'Hostname to login to',
