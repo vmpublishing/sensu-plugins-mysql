@@ -53,20 +53,19 @@ class CheckMysqlDisk < Sensu::Plugin::Check::CLI
          long: '--socket SOCKET'
 
   option :size,
-         short: '-s',
-         long: '--size=VALUE',
+         long: '--size SIZE',
          description: 'Database size',
          required: true
 
   option :warn,
          short: '-w',
-         long: '--warning=VALUE',
+         long: '--warning VALUE',
          description: 'Warning threshold',
          default: '85'
 
   option :crit,
          short: '-c',
-         long: '--critical=VALUE',
+         long: '--critical VALUE',
          description: 'Critical threshold',
          default: '95'
 
