@@ -24,8 +24,11 @@ require 'json'
 require 'mysql2'
 
 class MysqlMetric < Sensu::Handler
+
   # override filters from Sensu::Handler. not appropriate for metric handlers
-  def filter; end
+  def filter
+  end
+
 
   def handle
     # mysql settings
@@ -40,20 +43,18 @@ class MysqlMetric < Sensu::Handler
     check_output = @event['check']['output']
     check_status = @event['check']['status']
 
-    begin
-      con = Mysql2::Client.new mysql_hostname, mysql_username, mysql_password
-      con.query('INSERT INTO '\
-                'sensumetrics.sensu_historic_metrics('\
-                'client_id, check_name, issue_time, '\
-                'output, status) '\
-                "VALUES ('#{client_id}', '#{check_name}', "\
-                "#{check_issued}, '#{check_output}', #{check_status})")
-    rescue Mysql::Error => e
-      puts e.errno
-      puts e.error
-    ensure
-      con.close if con
-    end
+    con = Mysql2::Client.new(mysql_hostname, mysql_username, mysql_password)
+    con.query('INSERT INTO '\
+              'sensumetrics.sensu_historic_metrics('\
+              'client_id, check_name, issue_time, '\
+              'output, status) '\
+              "VALUES ('#{client_id}', '#{check_name}', "\
+              "#{check_issued}, '#{check_output}', #{check_status})")
+  rescue Mysql2::Error => e
+    puts e.message
+  ensure
+    con.close if con
   end
+
 end
 
