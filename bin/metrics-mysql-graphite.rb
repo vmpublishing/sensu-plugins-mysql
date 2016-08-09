@@ -250,7 +250,7 @@ class MysqlGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
           if self.class.mysql_metrics['general'].include?(key)
             # Replication lag being null is bad, very bad, so negativate it here
             value = -1 if key == 'Seconds_Behind_Master' && value.nil?
-            output "#{config[:scheme]}.#{scheme_append}.general.#{metrics['general'][key]}", value
+            output "#{config[:scheme]}.#{scheme_append}.general.#{self.class.mysql_metrics['general'][key]}", value
           end
         end
       end
