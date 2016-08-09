@@ -97,10 +97,11 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
     results = @client.query(sql)
     if results
       if 1 == results.size
-        if (value_1 + value_2) == results.first.fetch('Value').to_i
+        result_value = results.first.values.first.to_i
+        if (value_1 + value_2) == result_value
           ok "mysql server '#{@connection_info[:host]}' alive"
         else
-          critical "wrong result by mysql server for query: '#{sql}', got '#{results.first.fetch('Value').to_i}' expected #{value_1 + value_2}"
+          critical "wrong result by mysql server for query: '#{sql}', got '#{result_value}' expected #{value_1 + value_2}"
         end
       else
         critical "wrong number of results for query: '#{sql}', got '#{results.size}' expected 1"
@@ -115,10 +116,9 @@ class CheckMySQL < Sensu::Plugin::Check::CLI
     connect
     run_test
   rescue Mysql2::Error => e
-    errstr = "Error code: #{e.errno} Error message: #{e.error}"
-    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+    critical e.message
   rescue => e
-    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+    critical "UKNOWN: #{e.message}\n\n#{e.backtrace.join('\n')}"
   ensure
     @client.close if @client
   end

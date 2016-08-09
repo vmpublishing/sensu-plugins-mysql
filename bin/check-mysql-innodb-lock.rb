@@ -125,7 +125,7 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
 
     lock_info = []
     is_crit = false
-    result.each_hash do |row|
+    result.each do |row|
       h = {}
       is_crit = true if row['seconds'].to_i > crit
       h['blocking_id'] = row['blocking_id']
@@ -156,10 +156,9 @@ class CheckMySQLInnoDBLock < Sensu::Plugin::Check::CLI
     connect
     run_test
   rescue Mysql2::Error => e
-    errstr = "Error code: #{e.errno} Error message: #{e.error}"
-    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+    critical e.message
   rescue => e
-    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+    critical "UKNOWN: #{e.message}\n\n#{e.backtrace.join('\n')}"
   ensure
     @client.close if @client
   end

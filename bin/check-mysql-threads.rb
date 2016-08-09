@@ -101,7 +101,7 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
 
 
   def run_test
-    threads_running = @client.query("SHOW GLOBAL STATUS LIKE 'Threads_running'").fetch_hash.fetch('Value').to_i
+    threads_running = @client.query("SHOW GLOBAL STATUS LIKE 'Threads_running'").first.values.first.to_i
 
     if config[:maxcrit].to_i <= threads_running
       critical "MySQL currently running threads: #{run_thr}"
@@ -117,10 +117,9 @@ class CheckMySQLHealth < Sensu::Plugin::Check::CLI
     connect
     run_test
   rescue Mysql2::Error => e
-    errstr = "Error code: #{e.errno} Error message: #{e.error}"
-    critical "#{self.class.name} failed: #{errstr} SQLSTATE: #{e.sqlstate}" if e.respond_to?('sqlstate')
+    critical e.message
   rescue => e
-    critical "#{self.class.name} unknown error: #{e.message}\n\n#{e.backtrace.join('\n')}"
+    critical "UKNOWN: #{e.message}\n\n#{e.backtrace.join('\n')}"
   ensure
     @client.close if @client
   end
