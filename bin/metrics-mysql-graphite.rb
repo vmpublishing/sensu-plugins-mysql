@@ -231,7 +231,7 @@ class MysqlGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
 
   # props to https://github.com/coredump/hoardd/blob/master/scripts-available/mysql.coffee
   def run_test
-    scheme_append = config[:scheme_append] ? config[:scheme_append] : config[:host]
+    scheme_append = config[:scheme_append] ? config[:scheme_append] : config[:hostname]
     results = @client.query('SHOW GLOBAL STATUS')
     results.each do |row|
       self.class.mysql_metrics.each do |category, var_mapping|
@@ -245,11 +245,13 @@ class MysqlGraphiteMetrics < Sensu::Plugin::Metric::CLI::Graphite
       slave_results = @client.query('SHOW SLAVE STATUS')
       # should return a single element array containing one hash
       # #YELLOW
-      slave_results.first.each do |key, value|
-        if self.class.mysql_metrics['general'].include?(key)
-          # Replication lag being null is bad, very bad, so negativate it here
-          value = -1 if key == 'Seconds_Behind_Master' && value.nil?
-          output "#{config[:scheme]}.#{scheme_append}.general.#{metrics['general'][key]}", value
+      if slave_results.any?
+        slave_results.first.each do |key, value|
+          if self.class.mysql_metrics['general'].include?(key)
+            # Replication lag being null is bad, very bad, so negativate it here
+            value = -1 if key == 'Seconds_Behind_Master' && value.nil?
+            output "#{config[:scheme]}.#{scheme_append}.general.#{metrics['general'][key]}", value
+          end
         end
       end
     end
