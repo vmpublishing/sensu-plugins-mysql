@@ -66,19 +66,19 @@ class CheckMysqlInnodbLock < Sensu::Plugin::Check::CLI
 
 
   def connect
-    section = nil
+    section = {}
     if config[:ini]
       ini = IniFile.load(config[:ini])
       section = ini['client']
     end
 
     @connection_info = {
-      host:       config[:hostname],
-      username:  (config[     :ini] ? section[    'user'] : config[:user]),
-      password:  (config[     :ini] ? section['password'] : config[:password]),
-      database:   config[:database],
-      port:       config[    :port],
-      socket:     config[  :socket],
+      host:       section[    'host'] || config[:hostname],
+      username:   section[    'user'] || config[    :user],
+      password:   section['password'] || config[:password],
+      database:   section['database'] || config[:database],
+      port:       section[    'port'] || config[    :port],
+      socket:     section[  'socket'] || config[  :socket],
     }
     @client = Mysql2::Client.new(@connection_info)
   end
